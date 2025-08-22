@@ -34,7 +34,3 @@ This project demonstrates how a blockchain works by maintaining a ledger of user
 5. Check Validity
 6. Exit
 ```
-Sample Output Screenshots
-<img width="529" height="855" alt="image" src="https://github.com/user-attachments/assets/aa97fb70-5b4b-45e0-8a26-e32ffe37233f" />
-<img width="473" height="567" alt="image" src="https://github.com/user-attachments/assets/369a1bd2-a75c-489c-9c2d-c3a44c14eb90" />
-<img width="1181" height="446" alt="image" src="https://github.com/user-attachments/assets/e8e3cfa1-b4f1-463f-9fbd-748621196aa0" />
