@@ -1,14 +1,15 @@
-#Creating a simple block-chain using python
-#The Block contains its hash, hash of the previous block and transactions
 import hashlib
 import json
 import time
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.backends import default_backend
 
 class Block:
     def __init__(self, index, transactions, previous_hash):
         self.index = index
         self.timestamp = time.time()
-        self.transactions = transactions
+        self.transactions = transactions  # list of dicts
         self.previous_hash = previous_hash
         self.hash = self.calculate_hash()
 
@@ -24,7 +25,7 @@ class Block:
 class Blockchain:
     def __init__(self):
         self.chain = [self.create_genesis_block()]
-        self.users = {}  # store users and their balances
+        self.users = {}  # user: {balance, private_key, public_key}
 
     def create_genesis_block(self):
         return Block(0, ["Genesis Block"], "0")
@@ -41,7 +42,6 @@ class Blockchain:
         for i in range(1, len(self.chain)):
             current = self.chain[i]
             previous = self.chain[i - 1]
-
             if current.hash != current.calculate_hash():
                 return False
             if current.previous_hash != previous.hash:
@@ -60,24 +60,59 @@ class Blockchain:
     def add_user(self, name, balance):
         if name in self.users:
             print("User already exists!")
-        else:
-            self.users[name] = balance
-            print(f"User {name} added with {balance} Olives")
+            return
+
+        # Generate RSA key pair
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048,
+            backend=default_backend()
+        )
+        public_key = private_key.public_key()
+        self.users[name] = {
+            "balance": balance,
+            "private_key": private_key,
+            "public_key": public_key
+        }
+        print(f"User {name} added with {balance} Olives")
+
+    def sign_transaction(self, sender, transaction_data):
+        private_key = self.users[sender]["private_key"]
+        signature = private_key.sign(
+            transaction_data.encode(),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return signature
+
+    def verify_signature(self, public_key, transaction_data, signature):
+        try:
+            public_key.verify(
+                signature,
+                transaction_data.encode(),
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+            )
+            return True
+        except Exception:
+            return False
 
     def make_transaction(self, sender, receiver, amount):
         if sender not in self.users or receiver not in self.users:
-            print("⚠️ Invalid users!")
+            print(" Invalid users!")
             return False
 
-        if self.users[sender] < amount:
+        if self.users[sender]["balance"] < amount:
             print("Transaction failed: insufficient balance")
             return False
 
-        # update balances
-        self.users[sender] -= amount
-        self.users[receiver] += amount
-
-        # record transaction
+        # prepare transaction data
         tx = {
             "sender": sender,
             "receiver": receiver,
@@ -85,15 +120,43 @@ class Blockchain:
             "currency": "Olives",
             "timestamp": time.time()
         }
+        tx_string = json.dumps(tx, sort_keys=True)
+
+        # sign with sender's private key
+        signature = self.sign_transaction(sender, tx_string)
+
+        # attach signature and public key
+        tx["signature"] = signature.hex()
+        tx["public_key"] = self.users[sender]["public_key"].public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode()
+
+        # verify before adding
+        pub_key = serialization.load_pem_public_key(
+            tx["public_key"].encode(),
+            backend=default_backend()
+        )
+
+        if not self.verify_signature(pub_key, tx_string, bytes.fromhex(tx["signature"])):
+            print("Transaction signature invalid!")
+            return False
+
+        # update balances
+        self.users[sender]["balance"] -= amount
+        self.users[receiver]["balance"] += amount
+
+        # add to blockchain
         self.add_block([tx])
         print("Transaction successful and added to block")
         return True
 
     def show_users(self):
         print("\n--- User Balances ---")
-        for user, balance in self.users.items():
-            print(f"{user}: {balance} Olives")
+        for user, data in self.users.items():
+            print(f"{user}: {data['balance']} Olives")
         print("---------------------\n")
+
 
 if __name__ == "__main__":
     my_chain = Blockchain()
